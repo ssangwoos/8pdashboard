@@ -1,0 +1,8 @@
+const firebaseConfig = {
+  apiKey: "AIzaSyByAn44EGH-7YtISQwDtj4EZy8aWNyPJps",
+  authDomain: "pdashboard-603ad.firebaseapp.com",
+  projectId: "pdashboard-603ad",
+  storageBucket: "pdashboard-603ad.firebasestorage.app",
+  messagingSenderId: "734706245790",
+  appId: "1:734706245790:web:45ac672dd1781a79205b8f"
+};

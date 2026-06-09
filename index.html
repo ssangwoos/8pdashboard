@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pharmpay 매출 대시보드</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+
+  <!-- ───── 로그인 화면 ───── -->
+  <div id="login-screen" class="login-wrap">
+    <div class="login-card">
+      <div class="login-logo">
+        <span class="logo-pill">Rx</span>
+        <span class="logo-text">Pharmpay Dashboard</span>
+      </div>
+      <p class="login-sub">관리자 계정으로 로그인하세요</p>
+      <input id="login-email" type="email" placeholder="이메일" autocomplete="email" />
+      <input id="login-pw" type="password" placeholder="비밀번호" autocomplete="current-password" />
+      <button id="login-btn" class="btn-primary">로그인</button>
+      <p id="login-error" class="error-msg"></p>
+    </div>
+  </div>
+
+  <!-- ───── 대시보드 화면 ───── -->
+  <div id="dashboard-screen" class="hidden">
+
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="logo-pill sm">Rx</span>
+        <span class="topbar-title">Pharmpay 매출 대시보드</span>
+      </div>
+      <div class="topbar-right">
+        <span id="last-updated" class="last-updated">-</span>
+        <button id="refresh-btn" class="btn-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
+            <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0018.49 15"/>
+          </svg>
+          새로고침
+        </button>
+        <button id="logout-btn" class="btn-ghost">로그아웃</button>
+      </div>
+    </header>
+
+    <!-- 탭 -->
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="dashboard">📊 매출 현황</button>
+      <button class="tab-btn" data-tab="manage">🏪 매장 관리</button>
+    </div>
+
+    <!-- ── 매출 현황 탭 ── -->
+    <div id="tab-dashboard" class="tab-content">
+      <section class="summary-section">
+        <div class="summary-card" id="summary-total">
+          <div class="sc-label">이번 달 전체 매출</div>
+          <div class="sc-value" id="total-sales">-</div>
+        </div>
+        <div class="summary-card" id="summary-today">
+          <div class="sc-label">오늘 전체 매출</div>
+          <div class="sc-value" id="today-sales">-</div>
+        </div>
+        <div class="summary-card" id="summary-stores">
+          <div class="sc-label">조회 매장 수</div>
+          <div class="sc-value" id="store-count">-</div>
+        </div>
+      </section>
+      <section class="stores-section">
+        <div class="section-header">
+          <h2 class="section-title">매장별 현황</h2>
+          <span id="period-label" class="period-label">-</span>
+        </div>
+        <div id="store-grid" class="store-grid"></div>
+      </section>
+    </div>
+
+    <!-- ── 매장 관리 탭 ── -->
+    <div id="tab-manage" class="tab-content hidden">
+      <section class="manage-section">
+
+        <!-- 매장 추가 폼 -->
+        <div class="manage-card">
+          <h3 class="manage-title" id="form-title">➕ 매장 추가</h3>
+          <div class="manage-form">
+            <input id="f-name"   placeholder="매장 이름 (예: 충무로에이트약국)" />
+            <input id="f-bizno"  placeholder="사업자번호 (하이픈 없이, 예: 1234567890)" />
+            <input id="f-pw" type="password" placeholder="Pharmpay 비밀번호" />
+            <div class="form-btns">
+              <button id="save-btn"   class="btn-primary">저장</button>
+              <button id="cancel-btn" class="btn-ghost hidden">취소</button>
+            </div>
+          </div>
+          <p id="form-error" class="error-msg"></p>
+          <p id="form-success" class="success-msg"></p>
+        </div>
+
+        <!-- 매장 목록 -->
+        <div class="manage-card">
+          <h3 class="manage-title">🏪 등록된 매장</h3>
+          <div id="store-list" class="store-list">
+            <p style="color:var(--text-muted);font-size:14px">로딩 중...</p>
+          </div>
+        </div>
+
+      </section>
+    </div>
+
+    <!-- 오류 배너 -->
+    <div id="error-banner" class="error-banner hidden">
+      <span id="error-text"></span>
+      <button onclick="document.getElementById('error-banner').classList.add('hidden')">✕</button>
+    </div>
+  </div>
+
+  <!-- 삭제 확인 모달 -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3 class="modal-title">매장 삭제</h3>
+      <p id="modal-msg" class="modal-msg"></p>
+      <div class="modal-btns">
+        <button id="modal-cancel" class="btn-ghost">취소</button>
+        <button id="modal-confirm" class="btn-danger">삭제</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
