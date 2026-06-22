@@ -15,9 +15,9 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db   = firebase.firestore();
 
-// ────────────────────────────────────────────────
-//  DOM 참조
-// ────────────────────────────────────────────────
+const FUNCTION_URL = 'https://asia-northeast3-pdashboard-603ad.cloudfunctions.net/scrapeAllStores';
+
+// ── DOM ──
 const loginScreen   = document.getElementById('login-screen');
 const dashScreen    = document.getElementById('dashboard-screen');
 const loginEmail    = document.getElementById('login-email');
@@ -34,27 +34,25 @@ const lastUpdatedEl = document.getElementById('last-updated');
 const periodLabel   = document.getElementById('period-label');
 const errorBanner   = document.getElementById('error-banner');
 const errorText     = document.getElementById('error-text');
+const fName         = document.getElementById('f-name');
+const fBizno        = document.getElementById('f-bizno');
+const fPw           = document.getElementById('f-pw');
+const saveBtn       = document.getElementById('save-btn');
+const cancelBtn     = document.getElementById('cancel-btn');
+const formTitle     = document.getElementById('form-title');
+const formError     = document.getElementById('form-error');
+const formSuccess   = document.getElementById('form-success');
+const storeList     = document.getElementById('store-list');
+const modalOverlay  = document.getElementById('modal-overlay');
+const modalMsg      = document.getElementById('modal-msg');
+const modalCancel   = document.getElementById('modal-cancel');
+const modalConfirm  = document.getElementById('modal-confirm');
+const historyDate   = document.getElementById('history-date');
+const historyGrid   = document.getElementById('history-grid');
+const compareMonth  = document.getElementById('compare-month');
+const compareGrid   = document.getElementById('compare-grid');
 
-// 관리 탭
-const fName       = document.getElementById('f-name');
-const fBizno      = document.getElementById('f-bizno');
-const fPw         = document.getElementById('f-pw');
-const saveBtn     = document.getElementById('save-btn');
-const cancelBtn   = document.getElementById('cancel-btn');
-const formTitle   = document.getElementById('form-title');
-const formError   = document.getElementById('form-error');
-const formSuccess = document.getElementById('form-success');
-const storeList   = document.getElementById('store-list');
-
-// 모달
-const modalOverlay = document.getElementById('modal-overlay');
-const modalMsg     = document.getElementById('modal-msg');
-const modalCancel  = document.getElementById('modal-cancel');
-const modalConfirm = document.getElementById('modal-confirm');
-
-// ────────────────────────────────────────────────
-//  탭 전환
-// ────────────────────────────────────────────────
+// ── 탭 전환 ──
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -64,24 +62,22 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   });
 });
 
-// ────────────────────────────────────────────────
-//  인증 상태 감지
-// ────────────────────────────────────────────────
+// ── 인증 ──
 auth.onAuthStateChanged(user => {
   if (user) {
     loginScreen.classList.add('hidden');
     dashScreen.classList.remove('hidden');
     initDashboard();
     initManage();
+    initHistory();
+    initCompare();
   } else {
     loginScreen.classList.remove('hidden');
     dashScreen.classList.add('hidden');
   }
 });
 
-// ────────────────────────────────────────────────
-//  로그인 / 로그아웃
-// ────────────────────────────────────────────────
+// ── 로그인 ──
 loginBtn.addEventListener('click', async () => {
   const email = loginEmail.value.trim();
   const pw    = loginPw.value.trim();
@@ -97,11 +93,9 @@ loginBtn.addEventListener('click', async () => {
     loginBtn.textContent = '로그인';
   }
 });
-
 [loginEmail, loginPw].forEach(el =>
   el.addEventListener('keydown', e => { if (e.key === 'Enter') loginBtn.click(); })
 );
-
 function loginErrMsg(code) {
   const map = {
     'auth/user-not-found':   '등록되지 않은 계정입니다.',
@@ -109,30 +103,26 @@ function loginErrMsg(code) {
     'auth/invalid-email':    '이메일 형식이 올바르지 않습니다.',
     'auth/too-many-requests':'잠시 후 다시 시도하세요.',
   };
-  return map[code] || '로그인 실패. 다시 시도하세요.';
+  return map[code] || '로그인 실패.';
 }
-
 logoutBtn.addEventListener('click', () => auth.signOut());
 
-// ────────────────────────────────────────────────
-//  매출 대시보드
-// ────────────────────────────────────────────────
+// ════════════════════════════════════════════════
+//  탭1 — 매출 현황
+// ════════════════════════════════════════════════
 let unsubscribe = null;
 
 function initDashboard() {
   const now = new Date();
   periodLabel.textContent = `${now.getFullYear()}년 ${now.getMonth() + 1}월`;
-
   if (unsubscribe) unsubscribe();
 
   db.collection('stores').get().then(snap => {
     if (snap.empty) {
-      storeGrid.innerHTML = `<p style="color:var(--text-muted);font-size:14px">
-        등록된 매장이 없습니다. 매장 관리 탭에서 추가하세요.</p>`;
+      storeGrid.innerHTML = `<p style="color:var(--text-muted);font-size:14px;padding:8px">매장 관리 탭에서 매장을 추가하세요.</p>`;
       storeCountEl.textContent = '0';
       return;
     }
-
     const stores = [];
     snap.forEach(doc => stores.push({ id: doc.id, ...doc.data() }));
     storeCountEl.textContent = stores.length;
@@ -143,21 +133,20 @@ function initDashboard() {
       salesSnap.forEach(doc => { salesMap[doc.id] = doc.data(); });
       stores.forEach(store => updateStoreCard(store, salesMap[store.id] || null));
       calcSummary(stores, salesMap);
-      lastUpdatedEl.textContent = `마지막 갱신: ${timeStr(new Date())}`;
-    }, err => showError('실시간 데이터 오류: ' + err.message));
-
-  }).catch(err => showError('매장 목록 로드 실패: ' + err.message));
+      lastUpdatedEl.textContent = `갱신: ${timeStr(new Date())}`;
+    }, err => showError('데이터 오류: ' + err.message));
+  }).catch(err => showError('매장 로드 실패: ' + err.message));
 }
 
+// 새로고침
 refreshBtn.addEventListener('click', async () => {
   refreshBtn.disabled = true;
-  refreshBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" stroke-width="2.2" style="animation:spin .8s linear infinite">
+  refreshBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="2.5" style="animation:spin .8s linear infinite">
     <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
     <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0018.49 15"/>
-  </svg> 수집 중...`;
+  </svg><span class="btn-label"> 수집 중...</span>`;
   try {
-    const FUNCTION_URL = 'https://asia-northeast3-pdashboard-603ad.cloudfunctions.net/scrapeAllStores';
     const idToken = await auth.currentUser.getIdToken();
     const res = await fetch(FUNCTION_URL, {
       method: 'POST',
@@ -165,28 +154,235 @@ refreshBtn.addEventListener('click', async () => {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
   } catch (e) {
-    showError('새로고침 요청 실패: ' + e.message);
+    showError('새로고침 실패: ' + e.message);
   } finally {
     refreshBtn.disabled = false;
-    refreshBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" stroke-width="2.2">
+    refreshBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2.5">
       <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
       <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0018.49 15"/>
-    </svg> 새로고침`;
+    </svg><span class="btn-label"> 새로고침</span>`;
   }
 });
 
-// ────────────────────────────────────────────────
-//  매장 관리 (CRUD)
-// ────────────────────────────────────────────────
-let editingId = null;  // 수정 중인 문서 ID
+// ════════════════════════════════════════════════
+//  탭2 — 일별 히스토리
+// ════════════════════════════════════════════════
+function initHistory() {
+  const now = new Date();
+  const monthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  document.getElementById('history-month').value = monthStr;
+  loadHistory(monthStr);
+  document.getElementById('history-month').addEventListener('change', e => {
+    loadHistory(e.target.value);
+  });
+}
+
+async function loadHistory(monthStr) {
+  historyGrid.innerHTML = `<p style="color:var(--text-muted);font-size:14px;padding:8px">로딩 중...</p>`;
+
+  const [year, month] = monthStr.split('-').map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+
+  const storesSnap = await db.collection('stores').get();
+  if (storesSnap.empty) {
+    historyGrid.innerHTML = `<p style="color:var(--text-muted);font-size:14px">등록된 매장이 없습니다.</p>`;
+    return;
+  }
+
+  const stores = [];
+  storesSnap.forEach(doc => stores.push({ id: doc.id, ...doc.data() }));
+
+  // 모든 매장의 해당 월 일별 데이터 로드
+  const allData = await Promise.all(stores.map(async store => {
+    const daily = {};
+    await Promise.all(
+      Array.from({ length: daysInMonth }, (_, i) => i + 1).map(async d => {
+        const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const snap = await db.collection('salesHistory').doc(store.id)
+          .collection('daily').doc(dateStr).get();
+        if (snap.exists) daily[d] = snap.data().todayTotal || 0;
+      })
+    );
+    return { store, daily };
+  }));
+
+  const colors = ['#4f8ef7', '#6ee7b7', '#fbbf24', '#f87171', '#a78bfa'];
+
+  // 달력 HTML 생성
+  const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+  const firstDay = new Date(year, month - 1, 1).getDay();
+
+  let html = `
+    <div class="cal-wrap">
+      <div class="cal-header">
+        <span class="cal-title">${year}년 ${month}월</span>
+        <div class="cal-legend">
+          ${stores.map((s, i) => `
+            <span class="cal-legend-item">
+              <span class="cal-dot" style="background:${colors[i % colors.length]}"></span>
+              ${esc(s.name)}
+            </span>`).join('')}
+        </div>
+      </div>
+      <div class="cal-grid">
+        ${dayNames.map((d, i) => `
+          <div class="cal-dayname ${i===0?'sun':i===6?'sat':''}">${d}</div>`).join('')}`;
+
+  // 빈 칸 채우기
+  for (let i = 0; i < firstDay; i++) {
+    html += `<div class="cal-cell empty"></div>`;
+  }
+
+  // 날짜별 칸
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dow = (firstDay + d - 1) % 7;
+    const isToday = (new Date().getDate() === d &&
+      new Date().getMonth() + 1 === month &&
+      new Date().getFullYear() === year);
+
+    html += `<div class="cal-cell ${dow===0?'sun':dow===6?'sat':''} ${isToday?'today':''}">
+      <div class="cal-date">${d}</div>`;
+
+    allData.forEach((sd, i) => {
+      const amt = sd.daily[d];
+      if (amt != null && amt > 0) {
+        html += `<div class="cal-amount" style="color:${colors[i % colors.length]}">
+          ${Number(amt).toLocaleString('ko-KR')}
+        </div>`;
+      } else {
+        html += `<div class="cal-amount empty-amt">-</div>`;
+      }
+    });
+
+    html += `</div>`;
+  }
+
+  html += `</div></div>`;
+  historyGrid.innerHTML = html;
+}
+
+// ════════════════════════════════════════════════
+//  탭3 — 월별 비교
+// ════════════════════════════════════════════════
+let compareChart = null;
+
+function initCompare() {
+  const now = new Date();
+  compareMonth.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  loadCompare(compareMonth.value);
+  compareMonth.addEventListener('change', () => loadCompare(compareMonth.value));
+}
+
+async function loadCompare(monthStr) {
+  compareGrid.innerHTML = `<p style="color:var(--text-muted);font-size:14px;padding:8px">로딩 중...</p>`;
+
+  const [year, month] = monthStr.split('-').map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+
+  const storesSnap = await db.collection('stores').get();
+  if (storesSnap.empty) return;
+
+  const stores = [];
+  storesSnap.forEach(doc => stores.push({ id: doc.id, ...doc.data() }));
+
+  const dates = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
+  const storeData = await Promise.all(stores.map(async store => {
+    const dailyData = await Promise.all(dates.map(async d => {
+      const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const snap = await db.collection('salesHistory').doc(store.id)
+        .collection('daily').doc(dateStr).get();
+      return snap.exists ? (snap.data().todayTotal || 0) : 0;
+    }));
+    return { store, dailyData, total: dailyData.reduce((a, b) => a + b, 0) };
+  }));
+
+  // 선 그래프
+  const ctx = document.getElementById('compare-chart').getContext('2d');
+  if (compareChart) compareChart.destroy();
+
+  const colors = ['#4f8ef7', '#6ee7b7', '#fbbf24', '#f87171', '#a78bfa'];
+
+  compareChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dates.map(d => `${d}일`),
+      datasets: storeData.map((sd, i) => ({
+        label: sd.store.name,
+        data: sd.dailyData,
+        borderColor: colors[i % colors.length],
+        backgroundColor: colors[i % colors.length] + '22',
+        borderWidth: 2,
+        pointRadius: 3,
+        pointHoverRadius: 6,
+        tension: 0.3,
+        fill: false,
+      }))
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#e8eaf6', font: { size: 12 }, boxWidth: 16 } },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString('ko-KR')}원`
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#7b88b0', font: { size: 11 } },
+          grid: { color: '#2a3050' }
+        },
+        y: {
+          ticks: {
+            color: '#7b88b0',
+            callback: v => v >= 1000000 ? (v/1000000).toFixed(1) + 'M' : v.toLocaleString()
+          },
+          grid: { color: '#2a3050' }
+        }
+      }
+    }
+  });
+
+  // 매장별 월 합계 카드
+  compareGrid.innerHTML = '';
+  storeData.forEach((sd, i) => {
+    const activeDays = sd.dailyData.filter(v => v > 0).length;
+    const avg = activeDays > 0 ? Math.round(sd.total / activeDays) : 0;
+    const card = document.createElement('div');
+    card.className = 'store-card status-ok';
+    card.innerHTML = `
+      <div class="store-name" style="color:${colors[i % colors.length]}">${esc(sd.store.name)}</div>
+      <div class="store-rows">
+        <div class="store-row">
+          <span class="store-row-label">${monthStr} 총 매출</span>
+          <span class="store-row-value highlight" style="color:${colors[i % colors.length]}">${fmt(sd.total)}</span>
+        </div>
+        <div class="store-row">
+          <span class="store-row-label">일 평균</span>
+          <span class="store-row-value">${fmt(avg)}</span>
+        </div>
+        <div class="store-row">
+          <span class="store-row-label">영업일</span>
+          <span class="store-row-value">${activeDays}일</span>
+        </div>
+      </div>`;
+    compareGrid.appendChild(card);
+  });
+}
+
+// ════════════════════════════════════════════════
+//  탭4 — 매장 관리
+// ════════════════════════════════════════════════
+let editingId = null;
 
 function initManage() {
-  // 실시간으로 매장 목록 표시
   db.collection('stores').orderBy('name').onSnapshot(snap => {
     if (snap.empty) {
-      storeList.innerHTML = `<p style="color:var(--text-muted);font-size:14px">
-        등록된 매장이 없습니다. 위에서 추가해 주세요.</p>`;
+      storeList.innerHTML = `<p style="color:var(--text-muted);font-size:14px">등록된 매장이 없습니다.</p>`;
       return;
     }
     storeList.innerHTML = '';
@@ -197,14 +393,12 @@ function initManage() {
       item.innerHTML = `
         <div class="store-item-info">
           <span class="store-item-name">${esc(d.name)}</span>
-          <span class="store-item-meta">사업자번호: ${esc(d.bizNo)} &nbsp;|&nbsp; 비밀번호: ${'●'.repeat(Math.min(d.password?.length || 4, 8))}</span>
+          <span class="store-item-meta">사업자번호: ${esc(d.bizNo)}</span>
         </div>
         <div class="store-item-btns">
           <button class="btn-edit" data-id="${doc.id}">수정</button>
           <button class="btn-danger" data-id="${doc.id}" data-name="${esc(d.name)}">삭제</button>
         </div>`;
-
-      // 수정 버튼
       item.querySelector('.btn-edit').addEventListener('click', () => {
         editingId = doc.id;
         fName.value  = d.name;
@@ -213,58 +407,39 @@ function initManage() {
         formTitle.textContent = '✏️ 매장 수정';
         saveBtn.textContent   = '수정 저장';
         cancelBtn.classList.remove('hidden');
-        formError.textContent   = '';
-        formSuccess.textContent = '';
-        // 관리 탭으로 스크롤
+        formError.textContent = formSuccess.textContent = '';
         document.querySelector('[data-tab="manage"]').click();
         fName.focus();
       });
-
-      // 삭제 버튼
-      item.querySelector('.btn-danger').addEventListener('click', () => {
-        openDeleteModal(doc.id, d.name);
-      });
-
+      item.querySelector('.btn-danger').addEventListener('click', () => openDeleteModal(doc.id, d.name));
       storeList.appendChild(item);
     });
-  }, err => showError('매장 목록 오류: ' + err.message));
+  });
 }
 
-// 저장 (추가 / 수정)
 saveBtn.addEventListener('click', async () => {
   const name  = fName.value.trim();
   const bizNo = fBizno.value.trim().replace(/-/g, '');
   const pw    = fPw.value.trim();
-
-  formError.textContent   = '';
-  formSuccess.textContent = '';
+  formError.textContent = formSuccess.textContent = '';
 
   if (!name)  { formError.textContent = '매장 이름을 입력하세요.'; return; }
-  if (!bizNo) { formError.textContent = '사업자번호를 입력하세요.'; return; }
-  if (bizNo.length !== 10 || isNaN(bizNo)) {
+  if (!bizNo || bizNo.length !== 10 || isNaN(bizNo)) {
     formError.textContent = '사업자번호는 숫자 10자리로 입력하세요.'; return;
   }
-  if (!pw)    { formError.textContent = '비밀번호를 입력하세요.'; return; }
+  if (!pw) { formError.textContent = '비밀번호를 입력하세요.'; return; }
 
   saveBtn.disabled = true;
   saveBtn.textContent = '저장 중...';
-
   try {
     if (editingId) {
-      // 수정
       await db.collection('stores').doc(editingId).update({ name, bizNo, password: pw });
-      formSuccess.textContent = `"${name}" 매장 정보가 수정되었습니다.`;
-      resetForm();
+      formSuccess.textContent = `"${name}" 수정 완료!`;
     } else {
-      // 추가
-      await db.collection('stores').add({
-        name, bizNo, password: pw,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      formSuccess.textContent = `"${name}" 매장이 추가되었습니다.`;
-      resetForm();
+      await db.collection('stores').add({ name, bizNo, password: pw, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+      formSuccess.textContent = `"${name}" 추가 완료!`;
     }
-    // 대시보드도 새로고침
+    resetForm();
     initDashboard();
   } catch (e) {
     formError.textContent = '저장 실패: ' + e.message;
@@ -274,39 +449,28 @@ saveBtn.addEventListener('click', async () => {
   }
 });
 
-// 취소 (수정 모드 해제)
-cancelBtn.addEventListener('click', () => resetForm());
+cancelBtn.addEventListener('click', resetForm);
 
 function resetForm() {
   editingId = null;
-  fName.value  = '';
-  fBizno.value = '';
-  fPw.value    = '';
+  fName.value = fBizno.value = fPw.value = '';
   formTitle.textContent = '➕ 매장 추가';
   saveBtn.textContent   = '저장';
   cancelBtn.classList.add('hidden');
-  formError.textContent   = '';
+  formError.textContent = formSuccess.textContent = '';
 }
 
-// ── 삭제 모달 ──
 let deleteTargetId = null;
-
 function openDeleteModal(id, name) {
   deleteTargetId = id;
   modalMsg.textContent = `"${name}" 매장을 삭제하면 복구할 수 없습니다. 정말 삭제하시겠습니까?`;
   modalOverlay.classList.remove('hidden');
 }
-
-modalCancel.addEventListener('click', () => {
-  modalOverlay.classList.add('hidden');
-  deleteTargetId = null;
-});
-
+modalCancel.addEventListener('click', () => { modalOverlay.classList.add('hidden'); deleteTargetId = null; });
 modalConfirm.addEventListener('click', async () => {
   if (!deleteTargetId) return;
   try {
     await db.collection('stores').doc(deleteTargetId).delete();
-    // salesData도 함께 삭제
     await db.collection('salesData').doc(deleteTargetId).delete().catch(() => {});
     modalOverlay.classList.add('hidden');
     deleteTargetId = null;
@@ -316,87 +480,54 @@ modalConfirm.addEventListener('click', async () => {
     modalOverlay.classList.add('hidden');
   }
 });
-
-// 모달 바깥 클릭 시 닫기
 modalOverlay.addEventListener('click', e => {
-  if (e.target === modalOverlay) {
-    modalOverlay.classList.add('hidden');
-    deleteTargetId = null;
-  }
+  if (e.target === modalOverlay) { modalOverlay.classList.add('hidden'); deleteTargetId = null; }
 });
 
-// ────────────────────────────────────────────────
+// ════════════════════════════════════════════════
 //  카드 렌더링
-// ────────────────────────────────────────────────
+// ════════════════════════════════════════════════
 function skeletonCard(store) {
-  return `
-    <div class="store-card status-loading" id="card-${store.id}">
-      <div class="store-name">${esc(store.name || store.id)}
-        <span class="store-badge loading">대기 중</span>
-      </div>
-      <p style="color:var(--text-muted);font-size:13px;margin-top:8px">
-        새로고침 버튼을 눌러 데이터를 수집하세요.</p>
-    </div>`;
+  return `<div class="store-card status-loading" id="card-${store.id}">
+    <div class="store-name">${esc(store.name)}<span class="store-badge loading">대기 중</span></div>
+    <div class="skeleton skel-line wide"></div>
+    <div class="skeleton skel-line narrow"></div>
+  </div>`;
 }
 
 function updateStoreCard(store, data) {
   const el = document.getElementById(`card-${store.id}`);
   if (!el) return;
-
   if (!data) {
     el.className = 'store-card status-loading';
-    el.innerHTML = `
-      <div class="store-name">${esc(store.name || store.id)}
-        <span class="store-badge loading">대기 중</span>
-      </div>
-      <p style="color:var(--text-muted);font-size:13px;margin-top:8px">
-        새로고침 버튼을 눌러 데이터를 수집하세요.</p>`;
+    el.innerHTML = `<div class="store-name">${esc(store.name)}<span class="store-badge loading">대기 중</span></div>
+      <p style="color:var(--text-muted);font-size:13px;margin-top:8px">새로고침 버튼을 눌러 데이터를 수집하세요.</p>`;
     return;
   }
-
   if (data.status === 'error') {
     el.className = 'store-card status-error';
-    el.innerHTML = `
-      <div class="store-name">${esc(store.name || store.id)}
-        <span class="store-badge err">오류</span>
-      </div>
-      <p class="store-error-msg">⚠ ${esc(data.errorMsg || '데이터 수집 실패')}</p>
+    el.innerHTML = `<div class="store-name">${esc(store.name)}<span class="store-badge err">오류</span></div>
+      <p class="store-error-msg">⚠ ${esc(data.errorMsg || '수집 실패')}</p>
       <p class="store-updated">${updatedStr(data.updatedAt)}</p>`;
     return;
   }
-
   el.className = 'store-card status-ok';
   el.innerHTML = `
-    <div class="store-name">${esc(store.name || store.id)}
-      <span class="store-badge ok">정상</span>
-    </div>
+    <div class="store-name">${esc(store.name)}<span class="store-badge ok">정상</span></div>
     <div class="store-rows">
       <div class="store-row">
         <span class="store-row-label">이번 달 매출</span>
         <span class="store-row-value highlight">${fmt(data.monthTotal)}</span>
       </div>
-      <hr class="store-divider" />
+      <hr class="store-divider"/>
       <div class="store-row">
         <span class="store-row-label">오늘 매출</span>
         <span class="store-row-value today-val">${fmt(data.todayTotal)}</span>
       </div>
-      ${data.creditCard != null ? `
-      <div class="store-row">
-        <span class="store-row-label">신용카드</span>
-        <span class="store-row-value">${fmt(data.creditCard)}</span>
-      </div>` : ''}
-      ${data.cash != null ? `
-      <div class="store-row">
-        <span class="store-row-label">현금수납</span>
-        <span class="store-row-value">${fmt(data.cash)}</span>
-      </div>` : ''}
     </div>
     <p class="store-updated">${updatedStr(data.updatedAt)}</p>`;
 }
 
-// ────────────────────────────────────────────────
-//  요약 계산
-// ────────────────────────────────────────────────
 function calcSummary(stores, salesMap) {
   let totalMonth = 0, totalToday = 0;
   stores.forEach(s => {
@@ -410,35 +541,24 @@ function calcSummary(stores, salesMap) {
   todaySalesEl.textContent = fmt(totalToday);
 }
 
-// ────────────────────────────────────────────────
-//  유틸
-// ────────────────────────────────────────────────
+// ── 유틸 ──
 function fmt(n) {
   if (n == null || isNaN(n)) return '-';
   return Number(n).toLocaleString('ko-KR') + '원';
 }
-
 function timeStr(d) {
   return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
-
 function updatedStr(ts) {
   if (!ts) return '';
   const d = ts.toDate ? ts.toDate() : new Date(ts);
-  return `갱신: ${d.toLocaleString('ko-KR', { month: 'numeric', day: 'numeric',
-    hour: '2-digit', minute: '2-digit' })}`;
+  return `갱신: ${d.toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
 }
-
 function esc(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
-
 function showError(msg) {
   errorText.textContent = msg;
   errorBanner.classList.remove('hidden');
   setTimeout(() => errorBanner.classList.add('hidden'), 6000);
 }
-
-const style = document.createElement('style');
-style.textContent = `@keyframes spin { to { transform: rotate(360deg); } }`;
-document.head.appendChild(style);

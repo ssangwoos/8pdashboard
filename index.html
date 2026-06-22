@@ -2,16 +2,17 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <title>Pharmpay 매출 대시보드</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
-  <!-- ───── 로그인 화면 ───── -->
+  <!-- 로그인 -->
   <div id="login-screen" class="login-wrap">
     <div class="login-card">
       <div class="login-logo">
@@ -26,22 +27,22 @@
     </div>
   </div>
 
-  <!-- ───── 대시보드 화면 ───── -->
+  <!-- 대시보드 -->
   <div id="dashboard-screen" class="hidden">
 
     <header class="topbar">
       <div class="topbar-left">
         <span class="logo-pill sm">Rx</span>
-        <span class="topbar-title">Pharmpay 매출 대시보드</span>
+        <span class="topbar-title">Pharmpay</span>
       </div>
       <div class="topbar-right">
         <span id="last-updated" class="last-updated">-</span>
         <button id="refresh-btn" class="btn-icon">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
             <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0018.49 15"/>
           </svg>
-          새로고침
+          <span class="btn-label">새로고침</span>
         </button>
         <button id="logout-btn" class="btn-ghost">로그아웃</button>
       </div>
@@ -49,24 +50,26 @@
 
     <!-- 탭 -->
     <div class="tab-bar">
-      <button class="tab-btn active" data-tab="dashboard">📊 매출 현황</button>
-      <button class="tab-btn" data-tab="manage">🏪 매장 관리</button>
+      <button class="tab-btn active" data-tab="dashboard">📊 현황</button>
+      <button class="tab-btn" data-tab="history">📅 일별</button>
+      <button class="tab-btn" data-tab="compare">📈 월별</button>
+      <button class="tab-btn" data-tab="manage">🏪 매장</button>
     </div>
 
-    <!-- ── 매출 현황 탭 ── -->
+    <!-- 탭1: 매출 현황 -->
     <div id="tab-dashboard" class="tab-content">
       <section class="summary-section">
-        <div class="summary-card" id="summary-total">
-          <div class="sc-label">이번 달 전체 매출</div>
+        <div class="summary-card">
+          <div class="sc-label">이번 달 전체</div>
           <div class="sc-value" id="total-sales">-</div>
         </div>
-        <div class="summary-card" id="summary-today">
-          <div class="sc-label">오늘 전체 매출</div>
-          <div class="sc-value" id="today-sales">-</div>
+        <div class="summary-card">
+          <div class="sc-label">오늘 전체</div>
+          <div class="sc-value green" id="today-sales">-</div>
         </div>
-        <div class="summary-card" id="summary-stores">
-          <div class="sc-label">조회 매장 수</div>
-          <div class="sc-value" id="store-count">-</div>
+        <div class="summary-card">
+          <div class="sc-label">매장 수</div>
+          <div class="sc-value yellow" id="store-count">-</div>
         </div>
       </section>
       <section class="stores-section">
@@ -78,45 +81,66 @@
       </section>
     </div>
 
-    <!-- ── 매장 관리 탭 ── -->
+    <!-- 탭2: 일별 히스토리 -->
+    <div id="tab-history" class="tab-content hidden">
+      <section class="manage-section">
+        <div class="manage-card">
+          <div class="history-filter">
+            <h3 class="manage-title">📅 일별 매출 조회</h3>
+            <input type="month" id="history-month" class="date-input" />
+          </div>
+        </div>
+        <div id="history-grid" class="store-grid"></div>
+      </section>
+    </div>
+
+    <!-- 탭3: 월별 비교 -->
+    <div id="tab-compare" class="tab-content hidden">
+      <section class="manage-section">
+        <div class="manage-card">
+          <div class="history-filter">
+            <h3 class="manage-title">📈 월별 매출 비교</h3>
+            <input type="month" id="compare-month" class="date-input" />
+          </div>
+        </div>
+        <div class="manage-card">
+          <canvas id="compare-chart"></canvas>
+        </div>
+        <div id="compare-grid" class="store-grid"></div>
+      </section>
+    </div>
+
+    <!-- 탭4: 매장 관리 -->
     <div id="tab-manage" class="tab-content hidden">
       <section class="manage-section">
-
-        <!-- 매장 추가 폼 -->
         <div class="manage-card">
           <h3 class="manage-title" id="form-title">➕ 매장 추가</h3>
           <div class="manage-form">
-            <input id="f-name"   placeholder="매장 이름 (예: 충무로에이트약국)" />
-            <input id="f-bizno"  placeholder="사업자번호 (하이픈 없이, 예: 1234567890)" />
+            <input id="f-name"  placeholder="매장 이름" />
+            <input id="f-bizno" placeholder="사업자번호 (하이픈 없이)" />
             <input id="f-pw" type="password" placeholder="Pharmpay 비밀번호" />
             <div class="form-btns">
-              <button id="save-btn"   class="btn-primary">저장</button>
+              <button id="save-btn" class="btn-primary">저장</button>
               <button id="cancel-btn" class="btn-ghost hidden">취소</button>
             </div>
           </div>
           <p id="form-error" class="error-msg"></p>
           <p id="form-success" class="success-msg"></p>
         </div>
-
-        <!-- 매장 목록 -->
         <div class="manage-card">
           <h3 class="manage-title">🏪 등록된 매장</h3>
-          <div id="store-list" class="store-list">
-            <p style="color:var(--text-muted);font-size:14px">로딩 중...</p>
-          </div>
+          <div id="store-list" class="store-list"></div>
         </div>
-
       </section>
     </div>
 
-    <!-- 오류 배너 -->
     <div id="error-banner" class="error-banner hidden">
       <span id="error-text"></span>
       <button onclick="document.getElementById('error-banner').classList.add('hidden')">✕</button>
     </div>
   </div>
 
-  <!-- 삭제 확인 모달 -->
+  <!-- 삭제 모달 -->
   <div id="modal-overlay" class="modal-overlay hidden">
     <div class="modal-card">
       <h3 class="modal-title">매장 삭제</h3>
