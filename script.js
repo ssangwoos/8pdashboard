@@ -17,6 +17,23 @@ const db   = firebase.firestore();
 
 const FUNCTION_URL = 'https://asia-northeast3-pdashboard-603ad.cloudfunctions.net/scrapeAllStores';
 
+// ── 애월점 Firebase (별도 프로젝트) ──
+const firebaseConfigAewol = {
+  apiKey: "AIzaSyACOqns4PnakUaowOC107czAkNUsvvVhLA",
+  authDomain: "ledger-aewol.firebaseapp.com",
+  projectId: "ledger-aewol",
+  storageBucket: "ledger-aewol.firebasestorage.app",
+  messagingSenderId: "1085469734295",
+  appId: "1:1085469734295:web:0dbdfd0d675321686300d2"
+};
+const aewolApp = firebase.initializeApp(firebaseConfigAewol, "aewol");
+const dbAewol  = firebase.firestore(aewolApp);
+
+// 애월점 데이터 상태
+let aewolMonthTotal = 0;
+let aewolTodayTotal = 0;
+let aewolUpdatedAt  = null;
+
 // ── DOM ──
 const loginScreen   = document.getElementById('login-screen');
 const dashScreen    = document.getElementById('dashboard-screen');
@@ -118,24 +135,104 @@ function initDashboard() {
   if (unsubscribe) unsubscribe();
 
   db.collection('stores').get().then(snap => {
-    if (snap.empty) {
-      storeGrid.innerHTML = `<p style="color:var(--text-muted);font-size:14px;padding:8px">매장 관리 탭에서 매장을 추가하세요.</p>`;
-      storeCountEl.textContent = '0';
-      return;
-    }
     const stores = [];
-    snap.forEach(doc => stores.push({ id: doc.id, ...doc.data() }));
-    storeCountEl.textContent = stores.length;
-    storeGrid.innerHTML = stores.map(s => skeletonCard(s)).join('');
+    if (!snap.empty) snap.forEach(doc => stores.push({ id: doc.id, ...doc.data() }));
 
-    unsubscribe = db.collection('salesData').onSnapshot(salesSnap => {
-      const salesMap = {};
-      salesSnap.forEach(doc => { salesMap[doc.id] = doc.data(); });
-      stores.forEach(store => updateStoreCard(store, salesMap[store.id] || null));
-      calcSummary(stores, salesMap);
-      lastUpdatedEl.textContent = `갱신: ${timeStr(new Date())}`;
-    }, err => showError('데이터 오류: ' + err.message));
+    // 애월점 포함한 총 매장 수 (stores + 애월점 1개)
+    storeCountEl.textContent = stores.length + 1;
+
+    // 기존 매장 스켈레톤 + 애월점 스켈레톤
+    storeGrid.innerHTML = stores.map(s => skeletonCard(s)).join('') +
+      `<div class="store-card status-loading" id="card-aewol">
+        <div class="store-name">애월점<span class="store-badge loading">로딩 중</span></div>
+        <div class="skeleton skel-line wide"></div>
+        <div class="skeleton skel-line narrow"></div>
+      </div>`;
+
+    // 기존 매장 실시간 구독
+    if (stores.length > 0) {
+      unsubscribe = db.collection('salesData').onSnapshot(salesSnap => {
+        const salesMap = {};
+        salesSnap.forEach(doc => { salesMap[doc.id] = doc.data(); });
+        stores.forEach(store => updateStoreCard(store, salesMap[store.id] || null));
+        calcSummaryWithAewol(stores, salesMap);
+        lastUpdatedEl.textContent = `갱신: ${timeStr(new Date())}`;
+      }, err => showError('데이터 오류: ' + err.message));
+    }
+
+    // 애월점 — 오늘 매출 (today_sales 최신 문서)
+    dbAewol.collection('today_sales')
+      .orderBy('crawledAt', 'desc')
+      .limit(1)
+      .onSnapshot(snap => {
+        if (!snap.empty) {
+          const d = snap.docs[0].data();
+          aewolTodayTotal = d.todayTotal || 0;
+          aewolUpdatedAt  = d.crawledAt;
+        }
+        updateAewolCard();
+        calcSummaryWithAewol(stores, getCurrentSalesMap());
+      }, err => console.error('애월점 오늘 매출 오류:', err));
+
+    // 애월점 — 이번 달 월 매출 (dashboard_sales 합산)
+    const now2 = new Date();
+    const ym = `${now2.getFullYear()}-${String(now2.getMonth()+1).padStart(2,'0')}`;
+    dbAewol.collection('dashboard_sales')
+      .onSnapshot(snap => {
+        let monthTotal = 0;
+        snap.forEach(doc => {
+          const d = doc.data();
+          if (d.date && d.date.startsWith(ym)) {
+            monthTotal += d.realPaymentTotal || 0;
+          }
+        });
+        aewolMonthTotal = monthTotal;
+        updateAewolCard();
+        calcSummaryWithAewol(stores, getCurrentSalesMap());
+      }, err => console.error('애월점 월 매출 오류:', err));
+
   }).catch(err => showError('매장 로드 실패: ' + err.message));
+}
+
+// 현재 salesMap 캐시 (calcSummary에서 사용)
+let _currentSalesMap = {};
+function getCurrentSalesMap() { return _currentSalesMap; }
+
+// 애월점 카드 업데이트
+function updateAewolCard() {
+  const el = document.getElementById('card-aewol');
+  if (!el) return;
+  el.className = 'store-card status-ok';
+  el.innerHTML = `
+    <div class="store-name">애월점<span class="store-badge ok">정상</span></div>
+    <div class="store-rows">
+      <div class="store-row">
+        <span class="store-row-label">이번 달 매출</span>
+        <span class="store-row-value highlight">${fmt(aewolMonthTotal)}</span>
+      </div>
+      <hr class="store-divider"/>
+      <div class="store-row">
+        <span class="store-row-label">오늘 매출</span>
+        <span class="store-row-value today-val">${fmt(aewolTodayTotal)}</span>
+      </div>
+    </div>
+    <p class="store-updated">${aewolUpdatedAt ? updatedStr(aewolUpdatedAt) : ''}</p>`;
+}
+
+// 애월점 포함 요약 계산
+function calcSummaryWithAewol(stores, salesMap) {
+  _currentSalesMap = salesMap;
+  let totalMonth = aewolMonthTotal;
+  let totalToday = aewolTodayTotal;
+  stores.forEach(s => {
+    const d = salesMap[s.id];
+    if (d && d.status !== 'error') {
+      totalMonth += d.monthTotal || 0;
+      totalToday += d.todayTotal || 0;
+    }
+  });
+  totalSalesEl.textContent = fmt(totalMonth);
+  todaySalesEl.textContent = fmt(totalToday);
 }
 
 // 새로고침
@@ -529,16 +626,7 @@ function updateStoreCard(store, data) {
 }
 
 function calcSummary(stores, salesMap) {
-  let totalMonth = 0, totalToday = 0;
-  stores.forEach(s => {
-    const d = salesMap[s.id];
-    if (d && d.status !== 'error') {
-      totalMonth += d.monthTotal || 0;
-      totalToday += d.todayTotal || 0;
-    }
-  });
-  totalSalesEl.textContent = fmt(totalMonth);
-  todaySalesEl.textContent = fmt(totalToday);
+  calcSummaryWithAewol(stores, salesMap);
 }
 
 // ── 유틸 ──
